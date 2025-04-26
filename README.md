@@ -1,11 +1,11 @@
-# [108-2] NTU CSIE5805 ICG-HW1-WebGL
+# [108-2] NTU CSIE5085 ICG-HW1-WebGL
 
 ## Introduction
 This repository contains the source code of my WebGL project, the HW1 assignment for the ICG course at NTU CSIE. It implements three rendering methods: Flat, Gouraud, and Phong shading, along with multiple light sources and objects. A dynamic effect is included, where object size changes based on the amplitude of the background music. I also added buttons for random lighting and continuous rotation.
 
 Since the project was originally built over five years ago, many features had become outdated. I have refactored the code to ensure it runs in 2025, including removing some buttons and replacing the background assets with AI-generated, royalty-free content. The core WebGL rendering code has been minimally modified.
 
-If you have any questions, feel free to open an issue. Moreover, if you are currently enrolled in this course and **intend to use my code for your assignment**, please **make sure to check [this note](#)**.
+If you have any questions, feel free to open an issue. Moreover, if you are currently enrolled in this course and **intend to use my code for your assignment**, please **make sure to check [this note](Notes.md)**.
 
 
 ## How to Run the Project
