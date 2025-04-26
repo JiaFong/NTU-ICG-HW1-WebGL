@@ -1,0 +1,946 @@
+<html>
+
+<head>
+<title>ICG WebGL &mdash; D08922010 HW1</title>
+<meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+
+
+<script type="text/javascript" src="js/glMatrix-0.9.5.min.js"></script>
+<script type="text/javascript" src="js/webgl-utils.js"></script>
+<script type="text/javascript" src="js/utils.js"></script>
+<link rel="stylesheet" type="text/css" href="js/css_style.css">
+<!-- 
+    TODO HERE: 
+    modify fragment shader or write another one
+    to implement flat, gouraud and phong shading
+ -->
+<script id="fragmentShader" type="x-shader/x-fragment">
+    #extension GL_OES_standard_derivatives : enable 
+
+    precision mediump float;
+
+    varying vec3 shading_mode;
+    varying vec3 vertexColor;
+    varying vec3 fragPosition;
+    varying vec3 fragNormal;
+    varying vec3 lightLocations[3];
+    varying vec3 lightColors[3];
+    varying vec3 lightKdKsCDs[3];
+    varying float Ka_val;
+    varying vec3 ambient_lightColor;
+
+    varying vec4 fragcolor;   // for gouraud shading
+
+    void main(void) {
+        if(shading_mode[0] == 1.){                      // gouraud shading;
+            gl_FragColor = fragcolor;
+        }
+        else{                                           // flat or phong shading    
+
+            vec3 N = vec3(0., 0., 0.);
+            if(shading_mode[0] == 0.){
+                vec3 dx = dFdx(fragPosition);
+                vec3 dy = dFdy(fragPosition);
+                vec3 normal = normalize(cross(dx,dy));
+                N = normalize(normal);
+            }
+            else{
+                N = normalize(fragNormal);
+            }
+
+            vec3 phong = vec3(0., 0., 0.);
+
+            float ka = Ka_val;
+            vec3 V = -normalize(fragPosition);
+            vec3 ambient = ka * ambient_lightColor;
+
+            for(int i=0 ; i<3 ; ++i){
+                float  kd = lightKdKsCDs[i][0], ks = lightKdKsCDs[i][1], CosineDegree = lightKdKsCDs[i][2];
+                vec3 L = normalize(lightLocations[i] - fragPosition);
+                vec3 H = normalize(L+V);
+
+                vec3 Id = lightColors[i] * max(dot(L, N), 0.);
+                vec3 diffuse = kd * Id;
+    
+                vec3 Is = lightColors[i] * pow(max(dot(H, N), 0.), CosineDegree);
+                vec3 specular = ks * Is;
+    
+                if(dot(L, N) < 0.){
+                    specular = vec3(0., 0., 0.);
+                }
+                phong += vertexColor * (ambient + diffuse) + specular;
+
+            }
+            gl_FragColor = vec4(phong, 1.0);
+        }   
+    }
+</script>
+
+<!-- 
+    TODO HERE:
+    modify vertex shader or write another one
+    to implement flat, gouraud and phong shading
+
+    NOTE:
+    if you want to write bonus part (texture mapping),
+    only Teapot.json has extra attribute "vertexTextureCoords"
+    which is used for texture mappping.
+ -->
+<script id="vertexShader" type="x-shader/x-vertex">
+    attribute vec3 aVertexPosition;
+    attribute vec3 aFrontColor;
+    attribute vec3 aVertexNormal;
+
+    uniform vec3 lightLoc[3];
+    uniform vec3 lightColor[3];
+    uniform vec3 lightKdKsCD[3];
+    uniform mat4 uMVMatrix;
+    uniform mat4 uPMatrix;
+    uniform float Ka;
+    uniform vec3 ambient_color;
+    
+    uniform int mode;
+    uniform float volume;
+
+    varying vec3 vertexColor;
+    varying vec3 fragPosition;
+    varying vec3 fragNormal;
+    varying vec3 shading_mode;
+    varying vec3 lightLocations[3];
+    varying vec3 lightColors[3];
+    varying vec3 lightKdKsCDs[3];
+    varying float Ka_val;
+    varying vec3 ambient_lightColor;
+
+    varying vec4 fragcolor;
+
+    void main(void) {
+        Ka_val = Ka;
+        ambient_lightColor = ambient_color;
+        for(int i=0; i<3 ; ++i){
+            lightLocations[i] = lightLoc[i];
+            lightColors[i] = lightColor[i];
+            lightKdKsCDs[i] = lightKdKsCD[i];
+        }
+        
+        shading_mode = vec3(mode);
+
+        vec3 vertex_copy = aVertexPosition;
+        vertex_copy.x *= 1.+volume;
+        vertex_copy.y *= 1.+volume;
+        vertex_copy.z *= 1.+volume;
+
+        if(mode == 0 || mode == 2) {
+            fragPosition = (uMVMatrix * vec4(vertex_copy, 1.0)).xyz;
+            fragNormal = mat3(uMVMatrix) * aVertexNormal;
+            vertexColor = aFrontColor;
+        }
+        else {    
+            vec3 phong = vec3(0., 0., 0.);
+            vec3 mvVertex = (uMVMatrix * vec4(vertex_copy, 1.0)).xyz;
+            vec3 mvNormal = mat3(uMVMatrix) * aVertexNormal;
+
+            float ka = Ka; 
+            vec3 V = -normalize(mvVertex);
+            vec3 N = normalize(mvNormal);
+            vec3 ambient = ka * ambient_color;
+
+            for(int i=0 ; i<3 ; ++i){
+                float kd = lightKdKsCD[i][0], ks = lightKdKsCD[i][1], CosineDegree = lightKdKsCD[i][2];
+
+                vec3 L = normalize(lightLoc[i] - mvVertex);
+                vec3 H = normalize(L+V);
+
+                vec3 Id = lightColor[i] * max(dot(L, N), 0.);
+                vec3 diffuse = kd * Id;
+    
+                vec3 Is = lightColor[i] * pow(max(dot(H, N), 0.), CosineDegree);
+                vec3 specular = ks * Is;
+    
+                if(dot(L, N) < 0.){
+                    specular = vec3(0., 0., 0.);
+                }
+                phong += aFrontColor * (ambient + diffuse) + specular;
+
+            }
+            fragcolor = vec4(phong, 1.0);
+        }
+        gl_Position = uPMatrix * uMVMatrix * vec4(vertex_copy, 1.0);
+    }
+</script>
+
+<script type="text/javascript">
+    // common variables
+    var gl;
+    var shaderProgram;
+    var analyser;
+    var frequencyData = new Uint8Array();
+    var context;
+
+    // rendering method
+    var mode = 0;
+
+    // object parameters
+    var objNames = ["Teapot.json", "Easter.json", "Mig27.json"];
+    var objs = [];
+    var objInitTrans = [
+        vec3.create([0.0, 0.0, -15.0]), 
+        vec3.create([15.0, 0.0, -37.0]),  
+        vec3.create([-15.0, -1.0, -37.0])
+        ];
+    var objInitRotate = [
+        vec3.create([0.0, 0.0, -0.0]), 
+        vec3.create([-90.0, 0.0, -50.0]), 
+        vec3.create([-90.0, 0.0, -50.0])
+        ];
+    var objInitScale = [
+        vec3.create([0.2, 0.2, 0.2]), 
+        vec3.create([2.0, 2.0, 2.0]), 
+        vec3.create([5.0, 5.0, 5.0])
+        ];
+    var objInitShear = vec3.create([90.0, 90.0, 90.0]);
+    
+    // light parameters
+    var lightLocs = new Float32Array([0.0, 5.0, -10.0, 17.0, 5.0, -17.0, -17.0, 5.0, -17.0]);
+    var lightColors = new Float32Array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+    var lightKdKsCd = new Float32Array([0.6, 0.3, 20.0, 0.6, 0.3, 20.0, 0.6, 0.3, 20.0]);
+    var ka = 0.1;
+    var ambLightColor = vec3.create([1.0, 1.0, 1.0]);
+    
+    // animation controls
+    var flag_rot = false;
+    var flag_randLight = false;
+
+
+    //*************************************************
+    // Initialization functions
+    //*************************************************
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+            if (!gl.getExtension('OES_standard_derivatives')) {
+                alert('OES_standard_derivatives not supported!');
+            }
+
+            const displayWidth = canvas.clientWidth;
+            const displayHeight = canvas.clientHeight;
+            const ratio = window.devicePixelRatio || 1;
+            canvas.width = displayWidth * ratio;
+            canvas.height = displayHeight * ratio;
+            gl.viewportWidth  = canvas.width;
+            gl.viewportHeight = canvas.height;
+        } 
+        catch (e) {
+        }
+
+        if (!gl) {
+            alert("Could not initialise WebGL, sorry :-(");
+        }
+    }
+
+    function getShader(gl, id) {
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+            return null;
+        }
+
+        var shaderSource = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+            if (k.nodeType == 3) {
+                shaderSource += k.textContent;
+            }
+            k = k.nextSibling;
+        }
+
+        var shader;
+        if (shaderScript.type === "x-shader/x-fragment") {
+            shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } 
+        else if (shaderScript.type === "x-shader/x-vertex") {
+            shader = gl.createShader(gl.VERTEX_SHADER);
+        } 
+        else {
+            return null;
+        }
+
+        gl.shaderSource(shader, shaderSource);
+        gl.compileShader(shader);
+
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert(gl.getShaderInfoLog(shader));
+            return null;
+        }
+
+        return shader;
+    }
+
+    function initShaders() {
+        var fragmentShader = getShader(gl, "fragmentShader");
+        var vertexShader   = getShader(gl, "vertexShader");
+
+        shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+            alert("Could not initialise shaders");
+        }
+
+        gl.useProgram(shaderProgram);
+
+        shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+        gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+        shaderProgram.vertexFrontColorAttribute = gl.getAttribLocation(shaderProgram, "aFrontColor");
+        gl.enableVertexAttribArray(shaderProgram.vertexFrontColorAttribute);
+        shaderProgram.vertexNormalAttribute = gl.getAttribLocation(shaderProgram, "aVertexNormal");
+        gl.enableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+
+        shaderProgram.pMatrixUniform  = gl.getUniformLocation(shaderProgram, "uPMatrix");
+        shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+        gl.uniform1i(gl.getUniformLocation(shaderProgram, "mode"), mode);
+
+        gl.uniform3fv(gl.getUniformLocation(shaderProgram, "lightLoc"), lightLocs);
+        gl.uniform3fv(gl.getUniformLocation(shaderProgram, "lightColor"), lightColors);
+        gl.uniform3fv(gl.getUniformLocation(shaderProgram, "lightKdKsCD"), lightKdKsCd);
+        gl.uniform1f(gl.getUniformLocation(shaderProgram, "Ka"), ka);
+        gl.uniform3fv(gl.getUniformLocation(shaderProgram, "ambient_color"), ambLightColor);
+        
+        context = new AudioContext();
+        const audio = document.getElementById('myAudio');
+        const audioSrc = context.createMediaElementSource(audio);
+
+        analyser = context.createAnalyser();
+        analyser.smoothingTimeConstant = 0.6;
+        analyser.fftSize = 512;
+
+        audioSrc.connect(analyser);
+        analyser.connect(context.destination);
+        audioSrc.connect(context.destination);
+
+        frequencyData = new Uint8Array(analyser.frequencyBinCount); 
+
+        gl.uniform1f( gl.getUniformLocation(shaderProgram, "volume"), 0.);
+    }
+
+    function setMatrixUniforms(obj) {
+        gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, obj.pMatrix);
+        gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, obj.mvMatrix);
+    }
+
+    function handleLoaded(obj, objData) {
+        obj.VertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, obj.VertexPositionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objData.vertexPositions), gl.STATIC_DRAW);
+        obj.VertexPositionBuffer.itemSize = 3;
+        obj.VertexPositionBuffer.numItems = objData.vertexPositions.length / 3;
+
+        obj.VertexNormalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, obj.VertexNormalBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objData.vertexNormals), gl.STATIC_DRAW);
+        obj.VertexNormalBuffer.itemSize = 3;
+        obj.VertexNormalBuffer.numItems = objData.vertexNormals.length / 3;
+
+        obj.VertexFrontColorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, obj.VertexFrontColorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objData.vertexFrontcolors), gl.STATIC_DRAW);
+        obj.VertexFrontColorBuffer.itemSize = 3;
+        obj.VertexFrontColorBuffer.numItems = objData.vertexFrontcolors.length / 3;
+    }
+
+    function loadObj(obj) {
+      var request = new XMLHttpRequest();
+      request.open("GET", "model/"+obj.name);
+      request.onreadystatechange = function () {
+        if (request.readyState === 4 && request.status === 200) {
+          handleLoaded(obj, JSON.parse(request.responseText));
+        }
+      };
+      request.send();
+    }
+
+    function createSlider(id, min, max, value, step, oninputFuncName) {
+      const input = document.createElement("input");
+      input.type = "range";
+      input.id = id;
+      input.min = min;
+      input.max = max;
+      input.step = step;
+      input.value = value;
+      input.autocomplete = "off";
+      input.style.verticalAlign = "middle";
+      input.style.width = "6vw";
+      input.style.height = "auto";
+      input.oninput = () => {
+        window[oninputFuncName](id);
+      };
+      return input;
+    }
+
+    function buildAmbientLightSlider() {
+      const td_lam_ka = document.getElementById("td_lam_ka");
+      const td_lam_r = document.getElementById("td_lam_r");
+      const td_lam_g = document.getElementById("td_lam_g");
+      const td_lam_b = document.getElementById("td_lam_b");
+
+      td_lam_ka.innerText = "Ka: ";
+      td_lam_ka.appendChild(createSlider("lam_ka", 0.0, 1.0, 0.1, 0.05, "updateAmbientLight"));
+      td_lam_r.innerText = "R: ";
+      td_lam_r.appendChild(createSlider("lam_r", 0.0, 1.0, 1.0, 0.05, "updateAmbientLight"));
+      td_lam_g.innerText = "G: ";
+      td_lam_g.appendChild(createSlider("lam_g", 0.0, 1.0, 1.0, 0.05, "updateAmbientLight"));
+      td_lam_b.innerText = "B: ";
+      td_lam_b.appendChild(createSlider("lam_b", 0.0, 1.0, 1.0, 0.05, "updateAmbientLight"));
+    }
+
+    function buildLightSliders() {
+
+        const lightConfigs = [
+          {
+            loc:  [  0.0,  5.0, -10.0 ],
+            rgb:  [  1.0,  1.0,   1.0 ],
+            kkc:  [  0.6,  0.3,  20.0 ]
+          },
+          {
+            loc:  [ 17.0,  5.0, -17.0 ],
+            rgb:  [  1.0,  1.0,   1.0 ],
+            kkc:  [  0.6,  0.3,  20.0 ]
+          },
+          {
+            loc:  [-17.0,  5.0, -17.0 ],
+            rgb:  [  1.0,  1.0,   1.0 ],
+            kkc:  [  0.6,  0.3,  20.0 ]
+          }
+        ];
+
+        lightConfigs.forEach((light, i) => {
+        const locLabels = ["x", "y", "z"];
+        const rgbLabels = ["r", "g", "b"];
+        const kkcLabels = ["kd", "ks", "cd"];
+
+        locLabels.forEach((axis, j) => {
+          const td = document.getElementById(`td_l${i}_${axis}`);
+          td.innerText = axis.toUpperCase() + ": ";
+          td.appendChild(createSlider(`l${i}_${axis}`, -20.0, 20.0, light.loc[j], 1.0, "updateLightLoc"));
+        });
+
+        rgbLabels.forEach((ch, j) => {
+          const td = document.getElementById(`td_l${i}_${ch}`);
+          td.innerText = ch.toUpperCase() + ": ";
+          td.appendChild(createSlider(`l${i}_${ch}`, 0.0, 1.0, light.rgb[j], 0.05, "updateLightColor"));
+        });
+
+        kkcLabels.forEach((param, j) => {
+          const td = document.getElementById(`td_l${i}_${param}`);
+          td.innerText = param.toUpperCase() + ": ";
+          const range = param === "cd" ? [5.0, 100.0, 5.0] : [0.0, 1.0, 0.05];
+          td.appendChild(createSlider(`l${i}_${param}`, range[0], range[1], light.kkc[j], range[2], "updateLightKdKsCd"));
+        });
+      });
+    }
+
+    function buildObjectSliders() {
+        const objectConfigs = [
+            {
+                tra: [0.0, 0.0, -15.0],
+                rot: [0.0, 0.0, 0.0],
+                sca: [0.2, 0.2, 0.2],
+                she: [90.0, 90.0, 90.0]
+            },
+            {
+                tra: [15.0, 0.0, -37.0],
+                rot: [-90.0, 0.0, 50.0],
+                sca: [2.0, 2.0, 2.0],
+                she: [90.0, 90.0, 90.0]
+            },
+            {
+                tra: [-15.0, -1.0, -37.0],
+                rot: [-90.0, 0.0, -50.0],
+                sca: [5.0, 5.0, 5.0],
+                she: [90.0, 90.0, 90.0]
+            },
+        ];
+
+        objectConfigs.forEach((object, i) => {
+        const traLabels = ["transX", "transY", "transZ"];
+        const rotLabels = ["rotateX", "rotateY", "rotateZ"];
+        const scaLabels = ["scaleX", "scaleY", "scaleZ"];
+        const sheLabels = ["shearX", "shearY", "shearZ"];
+
+        traLabels.forEach((axis, j) => {
+          const td = document.getElementById(`td_o${i}_${axis}`);
+          td.innerText = axis[axis.length-1].toUpperCase() + ": ";
+          const range = axis === "transZ" ? [-120.0, 0.0] : [-50.0, 50.0] ;
+          td.appendChild(createSlider(`o${i}_${axis}`, range[0], range[1], object.tra[j], 1.0, "updateObjTranslation"));
+        });
+
+        rotLabels.forEach((axis, j) => {
+          const td = document.getElementById(`td_o${i}_${axis}`);
+          td.innerText = axis[axis.length-1].toUpperCase() + ": ";
+          td.appendChild(createSlider(`o${i}_${axis}`, -180.0, 180.0, object.rot[j], 1.0, "updateObjRotation"));
+        });
+
+        scaLabels.forEach((axis, j) => {
+          const td = document.getElementById(`td_o${i}_${axis}`);
+          td.innerText = axis[axis.length-1].toUpperCase() + ": ";
+          const range = axis === "scaleX" ? [0.05, 5.0] : [0.05, 8.0];
+          td.appendChild(createSlider(`o${i}_${axis}`, range[0], range[1], object.sca[j], 0.05, "updateObjScale"));
+        });
+
+        sheLabels.forEach((axis, j) => {
+          const td = document.getElementById(`td_o${i}_${axis}`);
+          td.innerText = axis[axis.length-1].toUpperCase() + ": ";
+          td.appendChild(createSlider(`o${i}_${axis}`, -180.0, 180.0, object.she[j], 1.0, "updateObjShear"));
+        });
+
+      });
+
+    }
+
+    //*************************************************
+    // Rendering functions
+    //*************************************************
+    function drawScene() {
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+        gl.clearColor(ka * ambLightColor[0], ka * ambLightColor[1], ka * ambLightColor[2], 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        for(var i=0 ; i<objs.length ; ++i)
+        {
+            if (objs[i].VertexPositionBuffer == null ||  objs[i].VertexNormalBuffer == null || objs[i].VertexFrontColorBuffer == null) {
+                continue;
+            }
+
+            mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, objs[i].pMatrix);
+            mat4.identity(objs[i].mvMatrix);
+
+            objs[i].translation();
+            objs[i].rotation();
+            objs[i].scale();
+            objs[i].shear();
+            setMatrixUniforms(objs[i]);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, objs[i].VertexPositionBuffer);
+            gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, objs[i].VertexPositionBuffer.itemSize,  gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, objs[i].VertexFrontColorBuffer);
+            gl.vertexAttribPointer(shaderProgram.vertexFrontColorAttribute, objs[i].VertexFrontColorBuffer.itemSize, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, objs[i].VertexNormalBuffer);
+            gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, objs[i].VertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            gl.uniform3fv(gl.getUniformLocation(shaderProgram, "lightLoc"), lightLocs);
+            gl.uniform3fv(gl.getUniformLocation(shaderProgram, "lightColor"), lightColors);
+            gl.uniform3fv(gl.getUniformLocation(shaderProgram, "lightKdKsCD"), lightKdKsCd);
+            gl.uniform1f(gl.getUniformLocation(shaderProgram, "Ka"), ka);
+            gl.uniform3fv(gl.getUniformLocation(shaderProgram, "ambient_color"), ambLightColor);
+            gl.uniform1f( gl.getUniformLocation(shaderProgram, "volume"), frequencyData[Math.floor(256 / 7) * i] / 625 );
+            gl.drawArrays(gl.TRIANGLES, 0, objs[i].VertexPositionBuffer.numItems);
+        }
+    }
+
+    function tick() {
+        requestAnimFrame(tick);
+        drawScene();
+
+        analyser.getByteFrequencyData(frequencyData);
+        
+        if(flag_rot){
+            rotateObjects();
+        }
+
+        if(flag_randLight){
+            randomLight();
+        }
+    }
+
+    function webGLStart() {
+        var canvas = document.getElementById("ICG-canvas");
+        initGL(canvas);
+        initShaders();
+
+        buildAmbientLightSlider();
+        buildLightSliders();
+        buildObjectSliders();
+
+        for (let i = 0; i < 3; i++) {
+            objs.push(new CGObject(i, objNames[i], objInitTrans[i], objInitRotate[i], objInitScale[i], objInitShear));
+            loadObj(objs[i]);
+        }
+
+        gl.clearColor(ka * ambLightColor[0], ka * ambLightColor[1], ka * ambLightColor[2], 1.0);
+        gl.enable(gl.DEPTH_TEST);
+
+        document.body.addEventListener('click', () => {
+          const audio = document.getElementById("myAudio");
+
+          if (context && context.state === 'suspended') {
+            context.resume().then(() => {
+              console.log("AudioContext resumed.");
+            });
+          }
+
+          if (audio.paused) {
+            audio.play().then(() => {
+              console.log("Audio element started");
+            }).catch((err) => {
+              console.warn("Audio play failed:", err);
+            });
+          }
+        });
+        
+        tick();
+    }
+
+    //*************************************************
+    // Utils functions
+    //*************************************************
+    function degToRad(degrees) {
+        return degrees * Math.PI / 180;
+    }
+
+    function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max)
+    }
+
+    //*************************************************
+    // Parsing parameters
+    //*************************************************
+    function update_mode(){
+        mode = document.getElementById("shading").value;
+        gl.uniform1i(gl.getUniformLocation(shaderProgram, "mode"), mode);
+    }
+
+    function updateAmbientLight(dummy){
+        ka = parseFloat(document.getElementById("lam_ka").value);
+        ambLightColor[0] = parseFloat(document.getElementById("lam_r").value);
+        ambLightColor[1] = parseFloat(document.getElementById("lam_g").value);
+        ambLightColor[2] = parseFloat(document.getElementById("lam_b").value);
+    }
+
+    function updateLightLoc(lid){
+        const idx = parseInt(lid[1]) 
+        lightLocs[idx*3] = parseFloat(document.getElementById(`l${idx}_x`).value);
+        lightLocs[idx*3+1] = parseFloat(document.getElementById(`l${idx}_y`).value);
+        lightLocs[idx*3+2] = parseFloat(document.getElementById(`l${idx}_z`).value);
+    }
+
+    function updateLightColor(lid){
+        const idx = parseInt(lid[1]) 
+        lightColors[idx*3] = parseFloat(document.getElementById(`l${idx}_r`).value);
+        lightColors[idx*3+1] = parseFloat(document.getElementById(`l${idx}_g`).value);
+        lightColors[idx*3+2] = parseFloat(document.getElementById(`l${idx}_b`).value);
+    }
+    
+    function updateLightKdKsCd(lid){
+        const idx = parseInt(lid[1]) 
+        lightKdKsCd[idx*3] = parseFloat(document.getElementById(`l${idx}_kd`).value);
+        lightKdKsCd[idx*3+1] = parseFloat(document.getElementById(`l${idx}_ks`).value);
+        lightKdKsCd[idx*3+2] = parseFloat(document.getElementById(`l${idx}_cd`).value);
+    }
+
+    function updateObjTranslation(oid){
+        const idx = parseInt(oid[1]) 
+        var tx = parseFloat(document.getElementById(`o${idx}_transX`).value);
+        var ty = parseFloat(document.getElementById(`o${idx}_transY`).value);
+        var tz = parseFloat(document.getElementById(`o${idx}_transZ`).value);
+        objs[idx].translation_vec = vec3.create([tx, ty, tz]);
+    }
+
+    function updateObjRotation(oid){
+        const idx = parseInt(oid[1]) 
+        var rx = parseFloat(document.getElementById(`o${idx}_rotateX`).value);
+        var ry = parseFloat(document.getElementById(`o${idx}_rotateY`).value);
+        var rz = parseFloat(document.getElementById(`o${idx}_rotateZ`).value);
+        objs[idx].rotate_vec = vec3.create([rx, ry, rz]);
+    }
+
+    function updateObjScale(oid){
+        const idx = parseInt(oid[1]) 
+        var sx = parseFloat(document.getElementById(`o${idx}_scaleX`).value);
+        var sy = parseFloat(document.getElementById(`o${idx}_scaleY`).value);
+        var sz = parseFloat(document.getElementById(`o${idx}_scaleZ`).value);
+        objs[idx].scale_vec = vec3.create([sx, sy, sz]);
+    }
+
+    function updateObjShear(oid){
+        const idx = parseInt(oid[1]) 
+        var sx = document.getElementById(`o${idx}_shearX`).value;
+        var sy = document.getElementById(`o${idx}_shearY`).value;
+        var sz = document.getElementById(`o${idx}_shearZ`).value;
+        objs[idx].shear_vec = vec3.create([sx, sy, sz]);
+    }
+
+    //*************************************************
+    // Additional functions
+    //*************************************************
+    function flipFlag(flag_name){
+        if (flag_name == "rotate") {
+            flag_rot = !flag_rot;
+        }
+        else {
+            flag_randLight = !flag_randLight;
+        }        
+    }
+
+    function rotateObjects() {
+        for(var i=0; i<objs.length; ++i){
+            var axis = (i==0) ? "Y": "Z";
+            var curRotate = parseFloat(document.getElementById(`o${i}_rotate${axis}`).value);
+
+            curRotate += 1.0;
+            if (curRotate >= 180.0) {
+                curRotate -= 360.0;
+            }
+
+            document.getElementById(`o${i}_rotate${axis}`).value = curRotate;
+            updateObjRotation(`o${i}_rotate${axis}`);
+        }
+    }
+
+    function randomLight() {
+        if(Math.random() > 0.5){
+            for(var i=0; i<lightColors.length / 3; ++i){
+            
+                var R = parseFloat(document.getElementById(`l${i}_r`).value);
+                var G = parseFloat(document.getElementById(`l${i}_g`).value);
+                var B = parseFloat(document.getElementById(`l${i}_b`).value);
+
+                dR = Math.random() * 0.1 - 0.05;
+                dG = Math.random() * 0.1 - 0.05;
+                dB = Math.random() * 0.1 - 0.05;
+
+                document.getElementById(`l${i}_r`).value = clamp(R + dR, 0.0, 1.0);
+                document.getElementById(`l${i}_g`).value = clamp(G + dG, 0.0, 1.0);
+                document.getElementById(`l${i}_b`).value = clamp(B + dB, 0.0, 1.0);
+                updateLightColor(`l${i}_r`);
+
+                var X = parseFloat(document.getElementById(`l${i}_x`).value);
+                var Y = parseFloat(document.getElementById(`l${i}_y`).value);
+                var Z = parseFloat(document.getElementById(`l${i}_z`).value);
+                
+                dX = Math.random() * 2. - 1.;
+                dY = Math.random() * 2. - 1.;
+                dZ = Math.random() * 2. - 1.;
+
+                document.getElementById(`l${i}_x`).value = clamp(X + dX, -50.0, 50.0);
+                document.getElementById(`l${i}_y`).value = clamp(Y + dY, -50.0, 50.0);
+                document.getElementById(`l${i}_z`).value = clamp(Z + dZ, -120.0, 0.0);
+                updateLightLoc(`l${i}_r`);
+            }
+        }
+    }
+
+</script>
+</head>
+
+<body onload="webGLStart();" style="background-image: url(media/background.png);   background-repeat: no-repeat; background-attachment: fixed; background-size: 100% 100%;">
+
+    <div style="position: absolute; right: 3%; top: 3%; ">
+      <div style="position: relative; width: 52vw; height: 100vh;">
+        <canvas id="ICG-canvas" style="position: absolute; top: 6%; right: 2%; width: 50vw; height: auto; z-index: 3; border: none;"></canvas>
+        <img src="media/monitor.png" style="position: absolute; top: 4%; width: 52vw; height: auto; z-index: 2;">
+        <audio style="position: absolute; left: 5%; top: 60%; z-index: 3; width: 15vw" id="myAudio" controls loop >
+             <source src="media/music.mp3" type="audio/mpeg">
+        </audio>
+        <input id="r_flag" type="button" autocomplete="off" value="Rotate" style="position:absolute; right: 3%; top: 60%; width: 6vw; height: auto; z-index: 3; font-size: medium;" onclick="flipFlag('rotate')">            
+        <input id="rlc_flag" type="button" autocomplete="off" value="Random Light" style="position:absolute; right: 18%; top: 60%; width: 10vw; height: auto; z-index: 3; font-size: medium;" onclick="flipFlag('light')">        
+      </div>
+    </div>
+    <div style="position: absolute; left: 3%; top: 3%; ">
+        <div style="position: relative; width: 30vw; height: 100vh;">
+            <div style="position: absolute; top: 1%; left: 5%">
+                <label for="shading" style="font-size: 1.6em ; font-family: monospace;">
+                    Shading Method:
+                </label>
+                <select id="shading" style="font-size: 1.6em ; font-family: monospace;" autocomplete="off" onchange="update_mode()" >
+                    <option value="0">Flat shading</option>
+                    <option value="1">Gouraud shading</option>
+                    <option value="2">Phong shading</option>
+                </select>              
+            </div>
+            <br>
+            <div style="position: absolute; top: 6%; left: 5%; width: 90vw; height: auto; font-size: 1.4em ; font-family: monospace;">
+                <details>
+                    <summary>Light Parameters</summary>
+                    </br>
+                    <span>Ambient Light</span>
+                    <table>
+                        <tr>
+                            <td id="td_lam_ka"></td>
+                        </tr>
+                        <tr>
+                            <td id="td_lam_r"></td>
+                            <td id="td_lam_g"></td>
+                            <td id="td_lam_b"></td>
+                        </tr>
+                    </table>
+                    </br>
+                    <span>Light 0</span>
+                    <table>
+                        <tr>
+                            <td id="td_l0_x"></td>
+                            <td id="td_l0_y"></td>
+                            <td id="td_l0_z"></td>
+                        </tr>
+                        <tr>
+                            <td id="td_l0_r"></td>
+                            <td id="td_l0_g"></td>
+                            <td id="td_l0_b"></td>
+                        </tr>
+                        <tr>
+                            <td id="td_l0_kd"></td>
+                            <td id="td_l0_ks"></td>
+                            <td id="td_l0_cd"></td>
+                        </tr>
+                    </table>
+                    </br>
+                    <span>Light 1</span>
+                    <table>
+                        <tr>
+                            <td id="td_l1_x"></td>
+                            <td id="td_l1_y"></td>
+                            <td id="td_l1_z"></td>
+                        </tr>
+                        <tr>
+                            <td id="td_l1_r"></td>
+                            <td id="td_l1_g"></td>
+                            <td id="td_l1_b"></td>
+                        </tr>
+                        <tr>
+                            <td id="td_l1_kd"></td>
+                            <td id="td_l1_ks"></td>
+                            <td id="td_l1_cd"></td>
+                        </tr>
+                    </table>
+                    </br>
+                    <span>Light 2</span>
+                    <table>
+                        <tr>
+                            <td id="td_l2_x"></td>
+                            <td id="td_l2_y"></td>
+                            <td id="td_l2_z"></td>
+                        </tr>
+                        <tr>
+                            <td id="td_l2_r"></td>
+                            <td id="td_l2_g"></td>
+                            <td id="td_l2_b"></td>
+                        </tr>
+                        <tr>
+                            <td id="td_l2_kd"></td>
+                            <td id="td_l2_ks"></td>
+                            <td id="td_l2_cd"></td>
+                        </tr>
+                    </table>
+                    </br>
+                </details>
+                <details>
+                    <summary>Object Parameters</summary>
+                    </br>
+                    <span>Object 0</span>
+                    <table>
+                        <tr>
+                            <th></th>
+                            <th>X axis</th>
+                            <th>Y axis</th>
+                            <th>Z axis</th>
+                        </tr>
+                        <tr>
+                            <td>Trans.</td>
+                            <td id="td_o0_transX"></td>
+                            <td id="td_o0_transY"></td>
+                            <td id="td_o0_transZ"></td>
+                        </tr>
+                        <tr>
+                            <td>Rotate</td>
+                            <td id="td_o0_rotateX"></td>
+                            <td id="td_o0_rotateY"></td>
+                            <td id="td_o0_rotateZ"></td>
+                        </tr>
+                        <tr>
+                            <td>Scale</td>
+                            <td id="td_o0_scaleX"></td>
+                            <td id="td_o0_scaleY"></td>
+                            <td id="td_o0_scaleZ"></td>
+                        </tr>
+                        <tr>
+                            <td>Shear</td>
+                            <td id="td_o0_shearX"></td>
+                            <td id="td_o0_shearY"></td>
+                            <td id="td_o0_shearZ"></td>
+                        </tr>
+                    </table>
+                    <br/>
+                    <span>Object 1</span>
+                    <table>
+                        <tr>
+                            <th></th>
+                            <th>X axis</th>
+                            <th>Y axis</th>
+                            <th>Z axis</th>
+                        </tr>
+                        <tr>
+                            <td>Trans.</td>
+                            <td id="td_o1_transX"></td>
+                            <td id="td_o1_transY"></td>
+                            <td id="td_o1_transZ"></td>
+                        </tr>
+                        <tr>
+                            <td>Rotate</td>
+                            <td id="td_o1_rotateX"></td>
+                            <td id="td_o1_rotateY"></td>
+                            <td id="td_o1_rotateZ"></td>
+                        </tr>
+                        <tr>
+                            <td>Scale</td>
+                            <td id="td_o1_scaleX"></td>
+                            <td id="td_o1_scaleY"></td>
+                            <td id="td_o1_scaleZ"></td>
+                        </tr>
+                        <tr>
+                            <td>Shear</td>
+                            <td id="td_o1_shearX"></td>
+                            <td id="td_o1_shearY"></td>
+                            <td id="td_o1_shearZ"></td>
+                        </tr>
+                        
+                    </table>
+                    <br/>
+                    <span>Object 2</span>
+                    <table>
+                        <tr>
+                            <th></th>
+                            <th>X axis</th>
+                            <th>Y axis</th>
+                            <th>Z axis</th>
+                        </tr>
+                        <tr>
+                            <td>Trans.</td>
+                            <td id="td_o2_transX"></td>
+                            <td id="td_o2_transY"></td>
+                            <td id="td_o2_transZ"></td>
+                        </tr>
+                        <tr>
+                            <td>Rotate</td>
+                            <td id="td_o2_rotateX"></td>
+                            <td id="td_o2_rotateY"></td>
+                            <td id="td_o2_rotateZ"></td>
+                        </tr>
+                        <tr>
+                            <td>Scale</td>
+                            <td id="td_o2_scaleX"></td>
+                            <td id="td_o2_scaleY"></td>
+                            <td id="td_o2_scaleZ"></td>
+                        </tr>
+                        <tr>
+                            <td>Shear</td>
+                            <td id="td_o2_shearX"></td>
+                            <td id="td_o2_shearY"></td>
+                            <td id="td_o2_shearZ"></td>
+                        </tr>
+                    </table>
+                </details>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
